@@ -5,4 +5,4 @@ Created on 2021-04-16
 from __future__ import absolute_import
 from .utils import *
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"

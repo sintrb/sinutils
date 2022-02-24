@@ -4,7 +4,6 @@ Created on 2021-04-16
 '''
 from __future__ import print_function
 
-
 try:
     from importlib import reload
 except:
@@ -133,9 +132,11 @@ class FilesWatcher(object):
     '''to watch files, and get changed'''
 
     def __init__(self, files=None):
-        self.fields = files
+        if files == None:
+            files = []
+        self.files = files
         self.file_map = {}
-        for f in self.fields:
+        for f in self.files:
             self.add_file(f)
 
     def add_file(self, file):
@@ -164,6 +165,8 @@ class ModulesWatcher(object):
     '''to watch modules, and reload module when module changed.'''
 
     def __init__(self, modules=None):
+        if modules == None:
+            modules = []
         self.module_map = {}
         self.files_watcher = FilesWatcher()
         for m in modules:
