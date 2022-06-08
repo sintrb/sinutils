@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 from collections import OrderedDict
 
 cmdmap = OrderedDict()
@@ -35,6 +35,50 @@ def watch(prog, sys_args):
         time.sleep(min(args.interval, 0.1))
         if untiltime and (time.time() > untiltime):
             break
+
+
+@reg
+def sizeimage(prog, sys_args):
+    '''chagne png size'''
+    from PIL import Image
+    import argparse
+    import time
+    import os
+    parser = argparse.ArgumentParser(prog=prog, add_help=True)
+    parser.add_argument('-o', '--output', help='the output file or template, support variable: {src}/{name}/{dir}/{format}', type=str, required=True)
+    parser.add_argument('-s', '--size', help='the output size', type=str, required=True)
+    parser.add_argument('file', help='the input files', default=[], type=str, nargs='*')
+    args = parser.parse_args(sys_args)
+    w, h = [int(i) for i in args.size.split('x')]
+    for src in args.file:
+        if '{' in args.output:
+            bn = os.path.basename(src)
+            bns = bn.split('.')
+            name = '.'.join(bns[0:-1])
+            format = bns[-1] if len(bns) >= 2 else ''
+            dirname = os.path.dirname(src)
+            dst = args.output \
+                .replace('{src}', src) \
+                .replace('{name}', name) \
+                .replace('{dir}', dirname) \
+                .replace('{format}', format) \
+                #
+        else:
+            dst = args.output
+        img = Image.open(src)
+        rw, rh = img.size
+        print('%s(%dx%d)->%s(%dx%d)...' % (src, rw, rh, dst, w, h), end=' ', flush=True)
+        st = int(time.time() * 1000)
+        if img.mode == 'RGBA' and not dst.upper().endswith('png'):
+            img = img.convert('RGB')
+        if rw != w or rh != h:
+            nimg = img.resize((w, h), )
+            nimg.save(dst)
+            print('ok', end=' ')
+        else:
+            img.save(dst)
+            print('ignore', end=' ')
+        print('%sms' % (int(time.time() * 1000) - st))
 
 
 def print_cmd_error(cmd):
