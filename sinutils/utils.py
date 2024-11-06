@@ -199,3 +199,65 @@ class ModulesWatcher(object):
                     import traceback
                     traceback.print_exc()
         return mds
+
+def make_tcp_proxy(port, target_ip, target_port, verbose=False):
+    import socket, select
+    server_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # 绑定本地地址和端口
+    server_addr = ('', port)
+    server_fd.bind(server_addr)
+    # 开始监听
+    server_fd.listen(100)
+    def print_verbose(msg):
+        if verbose:
+            print(msg)
+    print("Starting %s<->%s:%s ..." % (port, target_ip, target_port))
+    client_target_map = {}
+    target_addr = (target_ip, target_port)
+    target_title = '%s:%s' % (target_ip, target_port)
+    running = True
+    while running:
+        # 使用select监控所有文件描述符
+        fds = list(client_target_map.keys()) + [server_fd]
+        readfds, _, _ = select.select(fds, [], [], 1)
+        for fd in readfds:
+            try:
+                if fd == server_fd:
+                    # 接受新的客户端连接
+                    client_fd, client_addr = server_fd.accept()
+                    client_title = '%s:%s' % client_addr
+                    print_verbose("New client %s connected" % client_title)
+                    target_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    target_addr = (target_ip, target_port)
+                    try:
+                        target_fd.connect(target_addr)
+                    except Exception as e:
+                        print_verbose("Error connecting to target: %s" % e)
+                        import traceback
+                        traceback.print_exc()
+                        client_fd.close()
+                        target_fd.close()
+                        continue
+                    client_target_map[client_fd] = (target_fd, target_title)
+                    client_target_map[target_fd] = (client_fd, client_title)
+                    print_verbose("Tunnect %s<->%s connected" % (client_title, target_title))
+                elif fd in client_target_map:
+                    # 读取客户端发送的数据
+                    try:
+                        data = fd.recv(1500)
+                    except:
+                        data = ''
+                    fd2 = client_target_map[fd][0]
+                    if not data:
+                        fd.close()
+                        fd2.close()
+                        print_verbose("Tunnel %s<->%s disconnected" % (client_target_map[fd][1], client_target_map[fd2][1]))
+                        del client_target_map[fd]
+                        del client_target_map[fd2]
+                    else:
+                        fd2.send(data)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+    return 0

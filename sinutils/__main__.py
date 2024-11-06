@@ -79,7 +79,19 @@ def sizeimage(prog, sys_args):
             img.save(dst)
             print('ignore', end=' ')
         print('%sms' % (int(time.time() * 1000) - st))
-
+        
+@reg
+def proxy(prog, sys_args):
+    '''mack a tcp proxy/tunnel'''
+    import argparse
+    from sinutils.utils import make_tcp_proxy as _make_proxy
+    parser = argparse.ArgumentParser(prog=prog, add_help=True)
+    parser.add_argument('-p', '--port', help='the listen port, default is 8080', type=int, default=8080)
+    parser.add_argument('-t', '--target', help='the target address, default is "127.0.0.1:80"', type=str, default="127.0.0.1:80")
+    parser.add_argument('-v', '--verbose', help='Make the operation more talkative', action='store_true', default=False)
+    args = parser.parse_args(sys_args)
+    tgs = args.target.split(':')
+    _make_proxy(args.port, tgs[0], int(tgs[1]), verbose=args.verbose)
 
 def print_cmd_error(cmd):
     if not cmd:
