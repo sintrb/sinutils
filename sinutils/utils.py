@@ -239,8 +239,8 @@ def make_tcp_proxy(port, target_ip, target_port, verbose=False):
                         client_fd.close()
                         target_fd.close()
                         continue
-                    client_target_map[client_fd] = (target_fd, target_title)
-                    client_target_map[target_fd] = (client_fd, client_title)
+                    client_target_map[client_fd] = dict(fd=target_fd, title=target_title, bytes=0, tag='client')
+                    client_target_map[target_fd] = dict(fd=client_fd, title=client_title, bytes=0, tag='target')
                     print_verbose("Tunnect %s<->%s connected" % (client_title, target_title))
                 elif fd in client_target_map:
                     # 读取客户端发送的数据
@@ -248,14 +248,19 @@ def make_tcp_proxy(port, target_ip, target_port, verbose=False):
                         data = fd.recv(1500)
                     except:
                         data = ''
-                    fd2 = client_target_map[fd][0]
+                    fd2 = client_target_map[fd]['fd']
                     if not data:
                         fd.close()
                         fd2.close()
-                        print_verbose("Tunnel %s<->%s disconnected" % (client_target_map[fd][1], client_target_map[fd2][1]))
+                        d1 = client_target_map[fd]
+                        d2 = client_target_map[fd2]
+                        ctd, tgd = (d1, d2) if d1['tag'] == 'client' else (d2, d1)
+                        tuntitle = '%s<->%s' % (ctd['title'], tgd['title'])
+                        print_verbose("Tunnel %s disconnected, send=%d recv=%d" % (tuntitle, ctd['bytes'], tgd['bytes']))
                         del client_target_map[fd]
                         del client_target_map[fd2]
                     else:
+                        client_target_map[fd]['bytes'] += len(data)
                         fd2.send(data)
             except Exception as e:
                 import traceback

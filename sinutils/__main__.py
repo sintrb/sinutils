@@ -82,7 +82,7 @@ def sizeimage(prog, sys_args):
         
 @reg
 def proxy(prog, sys_args):
-    '''mack a tcp proxy/tunnel'''
+    '''make a tcp proxy/tunnel'''
     import argparse
     from sinutils.utils import make_tcp_proxy as _make_proxy
     parser = argparse.ArgumentParser(prog=prog, add_help=True)
@@ -92,6 +92,12 @@ def proxy(prog, sys_args):
     args = parser.parse_args(sys_args)
     tgs = args.target.split(':')
     _make_proxy(args.port, tgs[0], int(tgs[1]), verbose=args.verbose)
+
+@reg
+def http_proxy(prog, sys_args):
+    '''make http proxy with tornado'''
+    from sinutils.utils import make_http_proxy as _make_proxy
+    _make_proxy(prog, sys_args)
 
 def print_cmd_error(cmd):
     if not cmd:
