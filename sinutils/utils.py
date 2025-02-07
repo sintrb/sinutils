@@ -9,6 +9,9 @@ try:
 except:
     pass
 
+import sys
+
+IS_PYTHON2 = sys.version_info[0] == 2
 
 def walk_class(clz):
     '''wall all subclass of clz'''
@@ -266,3 +269,181 @@ def make_tcp_proxy(port, target_ip, target_port, verbose=False):
                 import traceback
                 traceback.print_exc()
     return 0
+
+def make_http_proxy(prog, sys_args):
+    import argparse
+    import tornado.ioloop
+    import tornado.web
+    import hashlib
+    import os
+    import argparse
+    import re
+    import json
+    import mimetypes
+    if IS_PYTHON2:
+        from urlparse import urlsplit
+    else:
+        from urllib.parse import urlsplit
+    from sinutils.utils import make_tcp_proxy as _make_proxy
+    parser = argparse.ArgumentParser(prog=prog, add_help=True)
+
+    parser.add_argument('-p', '--port', type=int, default=8080)
+    parser.add_argument('-x', '--proxy')
+    parser.add_argument('-c', '--cache-dir', default='./cache')
+    parser.add_argument('-P', '--progress', help='show progress', action='store_true', default=False)
+    parser.add_argument('-l', '--log', help='show log', action='store_true', default=False)
+    args = parser.parse_args(sys_args)
+    proxy = args.proxy or 'http://127.0.0.1:%s' % args.port
+    has_tqdm = False
+    show_log = args.log
+    rks = [
+        # ('http://', 'http//'),
+        # ('https://', 'https//'),
+    ]
+    if args.progress:
+        try:
+            from tqdm import tqdm
+            has_tqdm = True
+        except:
+            print('tqdm not found, please install it by: pip install tqdm')
+
+    def url_encode(s=''):
+        for h,r in rks:
+            if s.startswith(h):
+                s = s.replace(h, r)
+        return s
+
+    def url_decode(s=''):
+        for h,r in rks:
+            if s.startswith(r):
+                s = s.replace(r, h, 1)
+        return s
+
+    def request_data(url):
+        import requests
+        if has_tqdm:
+            from io import BytesIO
+            response = requests.get(url, stream=True)
+            total_size_in_bytes = int(response.headers.get('content-length', 0))
+            block_size = 1024  # 1 Kibibyte
+            progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
+            with BytesIO() as buffer:
+                for data in response.iter_content(block_size):
+                    buffer.write(data)
+                    progress_bar.update(len(data))
+                progress_bar.close()
+                content = buffer.getvalue()
+            return response, content
+        else:
+            response = requests.get(url)
+            return response, response.content
+
+    class ProxyHandler(tornado.web.RequestHandler):
+        def initialize(self, proxy, cache_dir):
+            self.proxy = proxy
+            self.cache_dir = cache_dir
+            # self.http_client = tornado.httpclient.AsyncHTTPClient()
+            if not os.path.exists(self.cache_dir):
+                os.makedirs(self.cache_dir)
+
+        def get(self):
+            import datetime
+            target_url = self.request.uri[1:]  # 移除开头的斜杠
+            if target_url and '://' not in target_url:
+                target_url = url_decode(target_url)
+            if show_log:
+                print(datetime.datetime.now(), target_url)
+
+            if not target_url.startswith(('http://', 'https://'), ):
+                self.set_status(400)
+                self.write("Invalid URL format")
+                return
+
+            # 生成缓存文件名
+            url_hash = hashlib.md5(target_url.encode()).hexdigest()
+            parsed_url = urlsplit(target_url)
+            path = parsed_url.path
+            filename = path.split('/')[-1] if path else ''
+            suffix = filename.split('.')[-1] if '.' in filename else ''
+            cache_file = url_hash
+            if suffix:
+                cache_file += '.' + suffix
+            cache_path = os.path.join(self.cache_dir, cache_file)
+            cache_mate_path = cache_path + '-mate.json'
+            # 检查缓存
+            if os.path.exists(cache_path):
+                with open(cache_path, 'rb') as f:
+                    content = f.read()
+                if show_log:
+                    print('\tcache', cache_path)
+                mimetype, _ = mimetypes.guess_type(cache_file)
+                with open(cache_path, 'rb') as f:
+                    content = f.read()
+                if os.path.exists(cache_mate_path):
+                    mate = json.load(open(cache_mate_path, 'r'))
+                    if mate and mate.get('headers') and mate['headers'].get('Content-Type'):
+                        mimetype = mate['headers']['Content-Type']
+                self.set_header('Content-Type', mimetype or 'application/octet-stream')
+                self.write(content)
+                return
+
+            # 没有缓存则请求目标URL
+            content = None
+            try:
+                # response = await self.http_client.fetch(target_url)
+                # content = response.body
+                # import requests
+                # response = requests.get(target_url)
+                # content = response.content
+                response, content = request_data(target_url)
+            except Exception as e:
+                self.set_status(500)
+                self.write("Error fetching target URL: %s" % e)
+                return
+            # print('content', len(content))
+            # 处理内容类型
+            content_type = response.headers.get('Content-Type', '').split(';')[0].strip()
+            text_types = [
+                'text/html',
+                'application/json',
+                'application/javascript',
+                'text/css',
+                'text/plain'
+            ]
+
+            if content_type in text_types:
+                # 替换所有http(s)链接
+                try:
+                    content = content.decode('utf-8')
+                    replaced = re.sub(
+                        r'(https?://)',
+                        lambda m: self.proxy + '/' + url_encode(m.group(0)),
+                        content
+                    )
+                    content_to_cache = replaced.encode('utf-8')
+                except UnicodeDecodeError:
+                    content_to_cache = content
+            else:
+                content_to_cache = content
+
+            # 写入缓存
+            with open(cache_path, 'wb') as f:
+                f.write(content_to_cache)
+            with open(cache_mate_path, 'w') as f:
+                mate = {'headers': dict(response.headers)}
+                json.dump(mate, f)
+
+            # 返回响应
+            self.set_header('Content-Type', content_type)
+            self.write(content_to_cache)
+
+
+    app = tornado.web.Application([
+        (r'.*', ProxyHandler, {'proxy': proxy, 'cache_dir': args.cache_dir}),
+    ], debug=True)
+
+    app.listen(args.port, address='0.0.0.0')
+    print("Proxy server running on 0.0.0.0:%s" % {args.port})
+    print("Proxy prefix: %s" % proxy)
+    print("Cache directory: %s" % args.cache_dir)
+    tornado.ioloop.IOLoop.current().start()
