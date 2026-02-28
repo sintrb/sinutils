@@ -108,16 +108,27 @@ def print_cmd_error(cmd):
         '/'.join(cmdmap.keys())
     ))
 
+def print_help():
+    from .__init__ import __version__
+    cmds = '/'.join(cmdmap.keys())
+    print('''
+    sinutils
+    version: {__version__}
+    usage:
+        python -m sinutils {cmds} [args]
+    '''.format(__version__=__version__, cmds=cmds).replace('    ', '  ').strip())
 
 if __name__ == '__main__':
     import sys
-
     if len(sys.argv) < 2:
         print_cmd_error(None)
     else:
         cmd = sys.argv[1]
         if cmd not in cmdmap:
-            print_cmd_error(cmd)
+            if cmd in ['help', 'version', '-h', '--help', '-v', '--version']:
+                print_help()
+            else:
+                print_cmd_error(cmd)
         else:
             prog = 'python -m sinutils %s' % cmd
             cmdmap[cmd](cmd, sys.argv[2:])
